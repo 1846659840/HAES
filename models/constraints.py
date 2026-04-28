@@ -247,7 +247,13 @@ class EWCLoss(nn.Module):
                                         retain_graph=False)
             for (name, param), grad in zip(self.model.named_parameters(), grads):
                 if name in fisher and grad is not None:
-                    fisher[name] += (grad.detach() ** 2) / num_batches
+                    fisher[name] += grad.detach() ** 2
+
+        # Normalize by actual number of batches processed
+        actual_batches = min(len(dataloader), num_batches)
+        if actual_batches > 0:
+            for name in fisher:
+                fisher[name] /= actual_batches
 
         self.model.train()
         return fisher

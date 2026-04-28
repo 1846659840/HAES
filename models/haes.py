@@ -307,6 +307,9 @@ class HAES(nn.Module):
 
         self.teacher = HAES(teacher_config)
         self.teacher.load_state_dict(teacher_state_dict, strict=False)
+        # Move teacher to same device as student model
+        device = next(self.parameters()).device
+        self.teacher.to(device)
         self.teacher.eval()
         for param in self.teacher.parameters():
             param.requires_grad = False
@@ -328,8 +331,8 @@ class HAES(nn.Module):
 
     def load_state(self, state_dict):
         """Load state including EWC buffers."""
-        self.hmoe.load_state_dict(state_dict["hmoe"])
-        self.scoring_head.load_state_dict(state_dict["scoring_head"])
+        self.hmoe.load_state_dict(state_dict["hmoe"], strict=False)
+        self.scoring_head.load_state_dict(state_dict["scoring_head"], strict=False)
         if "ewc_fisher" in state_dict:
             device = next(self.parameters()).device
             self.ewc_loss.fisher_diag = {
