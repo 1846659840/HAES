@@ -122,7 +122,7 @@ class Evaluator:
 
             results = self.evaluate(test_loader, num_classes)
             all_results.append(results)
-            performance_matrix[phase_idx, phase_idx] = results["mean_ap"]
+            performance_matrix[phase_idx, phase_idx] = results.get("mean_ap", results.get("mean_auc", 0))
 
         # Evaluate all previous phase test sets through current model
         for cur_phase in range(1, num_phases):
@@ -130,7 +130,7 @@ class Evaluator:
                 prev_loader = phase_test_loaders[prev_phase]
                 prev_seen, _ = phase_configs[prev_phase]
                 results = self.evaluate(prev_loader, len(prev_seen))
-                performance_matrix[cur_phase, prev_phase] = results["mean_ap"]
+                performance_matrix[cur_phase, prev_phase] = results.get("mean_ap", results.get("mean_auc", 0))
 
         bwt = compute_bwt(performance_matrix)
 

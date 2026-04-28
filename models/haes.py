@@ -229,12 +229,20 @@ class HAES(nn.Module):
         total_loss = loss_cls + self.lambda_temp * loss_temp
         loss_dict = {"cls": loss_cls.item(), "temp": loss_temp.item()}
 
-        # Knowledge distillation losses (only with teacher & after warmup)
-        if teacher_outputs is not None and not self.in_warmup:
-            # Entropy-weighted per-sample noise suppression (Theorem 3)
-            entropy_weights, _ = self.noise_module.compute_entropy_weights(
-                outputs["segment_logits"]
-            )  # [B]
+        # Knowledge distillation losses (Section III-C)
+        # During warmup: uniform weights (all ones) per paper "Uniform distillation
+        # weights to avoid premature noise solidification" (Section IV-B)
+        # After warmup: entropy-weighted per-sample noise suppression (Theorem 3)
+        if teacher_outputs is not None:
+            if self.in_warmup:
+                entropy_weights = torch.ones(
+                    outputs["segment_logits"].size(0),
+                    device=outputs["segment_logits"].device
+                )
+            else:
+                entropy_weights, _ = self.noise_module.compute_entropy_weights(
+                    outputs["segment_logits"]
+                )  # [B]
 
             # Output KD (Eq. 12) - per-sample entropy weighting (Theorem 3)
             per_sample_kd = self.kd_loss(
