@@ -86,7 +86,8 @@ def compute_ap(scores, labels):
     precision, recall = compute_pr_curve(scores, labels)
     # AP = integral of interpolated precision over recall
     if len(recall) > 1:
-        return float(np.trapezoid(precision, recall))
+        trapz = getattr(np, 'trapezoid', getattr(np, 'trapz', None))
+        return float(trapz(precision, recall))
     return 0.0
 
 

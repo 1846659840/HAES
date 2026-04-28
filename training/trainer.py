@@ -382,8 +382,14 @@ class IncrementalTrainer:
             top_k=old_head.top_k,
         ).to(self.device)
 
-        # Copy old weights for existing classes
+        # Copy old weights for existing classes and preserve trained feature extractor
         with torch.no_grad():
+            # Preserve fc1 (feature transformation) and norm (LayerNorm) weights
+            new_head.norm.weight.copy_(old_head.norm.weight)
+            new_head.norm.bias.copy_(old_head.norm.bias)
+            new_head.fc1.weight.copy_(old_head.fc1.weight)
+            new_head.fc1.bias.copy_(old_head.fc1.bias)
+            # Preserve fc2 weights for old classes, init new classes
             new_head.fc2.weight[:old_num_classes] = old_head.fc2.weight
             new_head.fc2.bias[:old_num_classes] = old_head.fc2.bias
             # New class weights initialized randomly (small values)

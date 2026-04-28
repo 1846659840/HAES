@@ -203,11 +203,12 @@ class ExpertLifecycleManager:
         if self._should_merge():
             return self._merge_experts()
 
-        # Check for Expert Recycling (every f phases)
+        # Check for Expert Recycling (checked every epoch, not just once per phase)
         if (self.current_phase > 0 and
-            self.current_phase % self.recycling_interval == 0 and
-            self.phase_epoch == self.warmup_epochs + 1):
-            return self._recycle_experts()
+            self.current_phase % self.recycling_interval == 0):
+            recycle_result = self._recycle_experts()
+            if recycle_result:
+                return recycle_result
 
         return None
 

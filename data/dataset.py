@@ -54,6 +54,8 @@ class VideoClipExtractor:
         for start in range(0, len(frames) - self.clip_length + 1, self.clip_stride):
             clip_frames = frames[start:start + self.clip_length]
             clip_tensor = torch.stack([self.transform(f) for f in clip_frames])
+            # R3D-18 expects [C, T, H, W]; stack produces [T, C, H, W]
+            clip_tensor = clip_tensor.permute(1, 0, 2, 3)
             clips.append(clip_tensor)  # [C, T, H, W]
         return clips
 

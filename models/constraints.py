@@ -178,6 +178,12 @@ class RoutingDistillationLoss(nn.Module):
                     N_m_actual = min(g2_s_raw.size(-1), g2_t_raw.size(-1))
                     k2 = min(self.top_k2, N_m_actual)
 
+                    # Truncate both to common dimension before top-k to prevent
+                    # index out-of-bounds when teacher has more experts than student
+                    # (e.g., after ELM merge/recycle during incremental phase)
+                    g2_t_raw = g2_t_raw[:, :N_m_actual]
+                    g2_s_raw = g2_s_raw[:, :N_m_actual]
+
                     _, topk2_idx = torch.topk(g2_t_raw, k2, dim=-1)
 
                     g2_s_trunc = torch.gather(g2_s_raw, 1, topk2_idx)

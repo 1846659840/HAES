@@ -125,8 +125,10 @@ def _create_dataset(video_paths, labels, feature_dir):
             if os.path.exists(feature_path):
                 features = torch.from_numpy(np.load(feature_path)).float()
             else:
-                # Placeholder for missing features
-                features = torch.randn(10, 512)
+                raise FileNotFoundError(
+                    f"Feature file not found: {feature_path}. "
+                    f"Run feature extraction first or check feature_dir."
+                )
             return features, self.labels[idx]
 
     return FeatureDataset(video_paths, labels, feature_dir)
@@ -186,7 +188,8 @@ def main():
     # Download datasets if requested
     if args.download:
         logger.info("Downloading datasets...")
-        data_dir = os.path.join(args.data_dir, args.dataset.upper().replace("_", "-"))
+        data_dir = os.path.join(args.data_dir, args.dataset.upper().replace("_", "-")
+                               ).replace("XD-VIOLENCE", "XD-Violence").replace("UCF-CRIME", "UCF-Crime")
         if args.dataset == "xd_violence":
             download_xd_violence(data_dir)
         elif args.dataset == "ucf_crime":
