@@ -30,8 +30,9 @@ class IncrementalDataSplitter:
         self.dataset_name = dataset_name
         self.data_dir = data_dir
         self.config = protocol_config[dataset_name]
-        self.phases = self.config["phases"]
-        self.num_phases = self.config["num_phases"]
+        # ShanghaiTech has different structure (no phases/num_phases keys)
+        self.phases = self.config.get("phases", [])
+        self.num_phases = self.config.get("num_phases", 1)
         self.categories = self.config["categories"]
 
     def split_xd_violence(self, annotation_dir=None):

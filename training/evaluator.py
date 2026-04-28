@@ -57,8 +57,6 @@ class Evaluator:
 
         all_video_scores = []
         all_video_labels = []
-        all_segment_scores = []
-        all_segment_labels = []
 
         for features, labels, lengths in tqdm(test_loader, desc="Evaluating"):
             features = features.to(self.device)
@@ -68,13 +66,9 @@ class Evaluator:
             all_video_scores.append(outputs["video_scores"].cpu().numpy())
             all_video_labels.append(labels.numpy())
 
-            # Segment-level for localization evaluation
-            all_segment_scores.append(outputs["segment_scores"].cpu().numpy())
-
         # Concatenate
         video_scores = np.concatenate(all_video_scores, axis=0)  # [N, C]
         video_labels = np.concatenate(all_video_labels, axis=0)  # [N]
-        segment_scores = np.concatenate(all_segment_scores, axis=0)  # [N, T, C]
 
         # Compute per-class and overall metrics
         class_aps, mean_ap = compute_video_level_ap(
@@ -190,7 +184,7 @@ class Evaluator:
 
             latency_ms = (end - start) * 1000
             all_latencies.append(latency_ms)
-            total_frames += B
+            total_frames += sum(lengths).item()  # actual clip count
             total_time += (end - start)
 
         all_latencies = np.array(all_latencies)
