@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data
+data/XD-Violence/
+data/UCF-Crime/
+data/ShanghaiTech/
+data/features/
+*.npy
+
+# Outputs
+output/
+logs/
+checkpoints/
+*.pt
+*.pth
+
+# TensorBoard
+runs/
+*.tfevents.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+credentials.json
+
+# Conda
+*.tar.bz2
+
+# Docker
+.dockerignore
+
+# SHA256 verification files (auto-generated)
+*.sha256

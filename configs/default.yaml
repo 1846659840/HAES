@@ -1,0 +1,68 @@
+# HAES Default Configuration
+# Hyperparameters from Section IV-B
+
+data:
+  xd_violence_path: "./data/XD-Violence"
+  ucf_crime_path: "./data/UCF-Crime"
+  shanghaitech_path: "./data/ShanghaiTech"
+
+feature_extraction:
+  backbone: "r3d_18"
+  pretrained: true  # Kinetics-400 pretrained
+  freeze_backbone: true
+  clip_length: 16  # T = 16 frames
+  clip_stride: 16  # delta_T
+  input_size: [112, 112]
+  feature_dim: 512  # R3D-18 output dim C'
+
+hmoe:
+  latent_dim: 512  # D
+  num_families: 4  # M
+  experts_per_family: 3  # N_m (initial)
+  routing_top_k1: 2  # family-level Top-k
+  routing_top_k2: 2  # expert-level Top-k
+  expert_type: "transformer"  # Transformer Encoder Block
+  expert_num_heads: 8
+  expert_ffn_dim: 2048
+  expert_num_layers: 2
+  dropout: 0.1
+
+incremental:
+  temperature: 4.0  # tau for distillation
+  lambda_kd: 1.0    # output distillation weight
+  lambda_mse: 1.0   # feature consistency weight
+  lambda_r: 1.0      # routing preservation weight
+  lambda_ewc: 100.0  # EWC regularization weight
+  ewc_fisher_decay: 0.9  # online-EWC decay factor
+  top_k_class: 5     # k_c for truncated KD
+
+elm:
+  window_size: 2048  # W batches for sliding window
+  add_threshold_delta: 0.05  # delta_add for loss stagnation
+  add_patience: 5    # E_patience epochs
+  add_family_threshold: 0.65  # tau_u^add for family activation
+  merge_threshold: 0.78  # delta_merge cosine similarity
+  recycle_threshold: 0.20  # tau_l activation frequency
+  cooldown_epochs: 2  # E_cooldown
+  warmup_epochs: 1   # E_warmup
+  recycling_interval: 5  # f phases
+  init_std: 0.02     # sigma_init for recycled experts
+  max_experts: 32    # structural budget cap
+
+training:
+  epochs_per_phase: 30
+  batch_size: 64
+  learning_rate: 0.0005  # 5e-4
+  weight_decay: 0.0001   # 1e-4
+  optimizer: "adam"
+  num_workers: 4
+  warmup_epochs: 3  # warm-up phase with uniform distillation
+  top_k_segments: 3  # K for Top-K MIL aggregation
+
+evaluation:
+  metrics: ["AP", "AUC", "BWT"]
+  xd_violence_metric: "AP"
+  ucf_crime_metric: "AUC"
+
+device: "cuda"
+seed: 42

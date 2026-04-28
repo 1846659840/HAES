@@ -1,0 +1,62 @@
+# Incremental Learning Protocol
+# Per Section IV-A
+
+xd_violence:
+  num_phases: 6
+  phases:
+    - [Abuse, CarAccident]       # Phase 1
+    - [Explosion]                 # Phase 2
+    - [Fighting]                  # Phase 3
+    - [Riot]                      # Phase 4
+    - [Shooting]                  # Phase 5
+    - [Normal]                    # Phase 6
+  categories:
+    - Abuse
+    - CarAccident
+    - Explosion
+    - Fighting
+    - Riot
+    - Shooting
+    - Normal
+  num_categories: 7  # 6 violence + normal (background)
+  test_split_ratio: 0.168  # 800 test / 4754 total
+
+ucf_crime:
+  num_phases: 13
+  phases:
+    - [Abuse]
+    - [Arrest]
+    - [Arson]
+    - [Assault]
+    - [Burglary]
+    - [Explosion]
+    - [Fighting]
+    - [RoadAcc]
+    - [Robbery]
+    - [Shooting]
+    - [Shoplifting]
+    - [Stealing]
+    - [Vandalism]
+  categories:
+    - Abuse
+    - Arrest
+    - Arson
+    - Assault
+    - Burglary
+    - Explosion
+    - Fighting
+    - RoadAcc
+    - Robbery
+    - Shooting
+    - Shoplifting
+    - Stealing
+    - Vandalism
+  num_categories: 13
+  test_split_ratio: 0.153  # 290 test / 1900 total
+
+shanghaitech:
+  num_scenes: 13
+  categories:
+    - Normal
+    - Anomaly
+  num_categories: 2
