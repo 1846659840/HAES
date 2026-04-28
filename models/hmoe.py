@@ -92,6 +92,12 @@ class HMoE(nn.Module):
         """
         B, T_seg, _ = F_seq.shape
 
+        if T_seg > self.pos_embed.size(1):
+            raise ValueError(
+                f"Input sequence length {T_seg} exceeds max_seq_len "
+                f"{self.pos_embed.size(1)}. Truncate or increase max_seq_len."
+            )
+
         # Normalize and project
         F_norm = self.enc_norm(F_seq)
         z = self.W_enc(F_norm)  # [B, T_seg, D]
@@ -192,6 +198,8 @@ class HMoE(nn.Module):
                 new_param.copy_(stacked.mean(dim=0))
 
         self.experts[m].append(new_expert)
+        # Move new expert to the same device as the model
+        new_expert.to(next(self.parameters()).device)
         # Update expert gate dimension
         old_gate = self.gate.expert_gates[m]
         new_gate = nn.Linear(self.latent_dim, len(self.experts[m]))
