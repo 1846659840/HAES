@@ -218,8 +218,8 @@ class ExpertLifecycleManager:
             return False
 
         recent_losses = self.loss_history[-self.add_patience:]
-        loss_decrease = recent_losses[0] - recent_losses[-1]
-        if loss_decrease > self.add_delta:
+        loss_change = abs(recent_losses[0] - recent_losses[-1])
+        if loss_change > self.add_delta:
             self.stagnation_counter = 0
             return False
 
@@ -294,6 +294,12 @@ class ExpertLifecycleManager:
             if success:
                 self.total_merges += 1
                 self.epochs_since_structural_change = 0
+                # Update centroid of surviving expert i to reflect merged weights
+                if (m, i) in self.similarity_tracker.centroids and (m, j) in self.similarity_tracker.centroids:
+                    self.similarity_tracker.centroids[(m, i)] = (
+                        alpha_i * self.similarity_tracker.centroids[(m, i)] +
+                        alpha_j * self.similarity_tracker.centroids[(m, j)]
+                    ) / (alpha_i + alpha_j + 1e-8)
                 # Clean up tracking metadata for removed expert j
                 self.similarity_tracker.centroids.pop((m, j), None)
                 self.similarity_tracker.centroid_counts.pop((m, j), None)

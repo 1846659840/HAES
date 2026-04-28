@@ -44,7 +44,7 @@ elm:
   merge_threshold: 0.78  # delta_merge cosine similarity
   recycle_threshold: 0.20  # tau_l activation frequency
   cooldown_epochs: 2  # E_cooldown
-  warmup_epochs: 1   # E_warmup
+  warmup_epochs: 3   # E_warmup (matches trainer warmup, Section IV-B)
   recycling_interval: 5  # f phases
   init_std: 0.02     # sigma_init for recycled experts
   max_experts: 32    # structural budget cap

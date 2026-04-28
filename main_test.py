@@ -53,11 +53,22 @@ def main():
     with open("configs/incremental_protocol.yaml", "r") as f:
         protocol = yaml.safe_load(f)
 
-    # Build model config
+    # Build model config with both nested sections and flattened keys
     full_config = {}
     for section in ["feature_extraction", "hmoe", "incremental", "elm", "training", "evaluation"]:
         if section in config:
+            full_config[section] = config[section]
             full_config.update(config[section])
+    # Map keys for HAES direct instantiation
+    full_config["input_dim"] = config.get("feature_extraction", {}).get("feature_dim", 512)
+    full_config["top_k_segments"] = config.get("training", {}).get("top_k_segments", 3)
+    # Dataset-appropriate primary metric
+    eval_cfg = config.get("evaluation", {})
+    if args.dataset == "ucf_crime":
+        full_config["primary_metric"] = "AUC"
+    else:
+        full_config["primary_metric"] = eval_cfg.get("xd_violence_metric", "AP")
+
     full_config["num_classes"] = protocol[args.dataset]["num_categories"]
     full_config["total_phases"] = protocol[args.dataset]["num_phases"]
 
@@ -75,7 +86,8 @@ def main():
     logger.info(f"Checkpoint metrics: {checkpoint.get('metrics', {})}")
 
     # Build test loaders
-    data_dir = os.path.join(args.data_dir, args.dataset.upper().replace("_", "-"))
+    data_dir = os.path.join(args.data_dir, args.dataset.upper().replace("_", "-")
+                           ).replace("XD-VIOLENCE", "XD-Violence").replace("UCF-CRIME", "UCF-Crime")
     splitter = IncrementalDataSplitter(
         dataset_name=args.dataset,
         data_dir=data_dir,

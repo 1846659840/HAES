@@ -28,26 +28,36 @@ class DistillationLoss(nn.Module):
         self.temperature = temperature
         self.top_k_class = top_k_class
 
-    def forward(self, student_logits, teacher_logits):
+    def forward(self, student_logits, teacher_logits, reduction="mean"):
         """
         Args:
             student_logits: [B, T_seg, C]
             teacher_logits: [B, T_seg, C]
+            reduction: "mean" (scalar) or "none" (per-sample [B])
 
         Returns:
-            L_KD: scalar loss
+            L_KD: scalar loss (reduction="mean") or [B] (reduction="none")
         """
         B, T_seg, C = student_logits.shape
+        C_t = teacher_logits.shape[-1]
+
+        # Align class dimensions: student may have more classes than teacher
+        # after incremental expansion. Slice student to teacher's class set
+        # so softmax is over identical support (valid KL divergence).
+        if C > C_t:
+            student_logits = student_logits[:, :, :C_t]
 
         # Temperature-scaled softmax (Eq. 10)
         p_s = F.softmax(student_logits / self.temperature, dim=-1)
         p_t = F.softmax(teacher_logits / self.temperature, dim=-1)
 
         # Truncated normalized KL (Eq. 11-12)
-        k = min(self.top_k_class, C)
+        # k must not exceed either student or teacher class dimension
+        C_t = p_t.shape[-1]
+        k = min(self.top_k_class, C, C_t)
         _, topk_idx = torch.topk(p_t, k, dim=-1)  # [B, T_seg, k]
 
-        loss = 0.0
+        per_sample_kl = torch.zeros(B, device=student_logits.device)
         for t in range(T_seg):
             p_s_t = p_s[:, t, :]  # [B, C]
             p_t_t = p_t[:, t, :]  # [B, C]
@@ -59,13 +69,20 @@ class DistillationLoss(nn.Module):
             p_s_trunc = p_s_trunc / (p_s_trunc.sum(dim=-1, keepdim=True) + 1e-8)
             p_t_trunc = p_t_trunc / (p_t_trunc.sum(dim=-1, keepdim=True) + 1e-8)
 
-            # KL divergence
+            # KL divergence per sample
             kl = (p_t_trunc * (p_t_trunc + 1e-8).log() -
-                  p_t_trunc * (p_s_trunc + 1e-8).log()).sum(dim=-1)
-            loss += kl.mean()
+                  p_t_trunc * (p_s_trunc + 1e-8).log()).sum(dim=-1)  # [B]
+            per_sample_kl += kl
+
+        # Average over time
+        per_sample_kl = per_sample_kl / T_seg
 
         # Temperature scaling (Eq. 12)
-        return (self.temperature ** 2) * loss / T_seg
+        per_sample_kd = (self.temperature ** 2) * per_sample_kl  # [B]
+
+        if reduction == "none":
+            return per_sample_kd
+        return per_sample_kd.mean()
 
 
 class FeatureConsistencyLoss(nn.Module):
@@ -85,12 +102,10 @@ class FeatureConsistencyLoss(nn.Module):
         Returns:
             L_MSE: scalar loss
         """
-        # Normalize along feature dim
-        s_norm = F.normalize(student_features, p=2, dim=-1)
-        t_norm = F.normalize(teacher_features, p=2, dim=-1)
-
-        B, T_seg, D = s_norm.shape
-        loss = ((s_norm - t_norm) ** 2).sum() / (B * T_seg * D)
+        # Eq. 13: L_MSE = (1/(T_seg*D)) * ||H_fused^S - H_fused^T||_F^2
+        # No L2 normalization - direct Frobenius norm on fused features
+        B, T_seg, D = student_features.shape
+        loss = ((student_features - teacher_features) ** 2).sum() / (B * T_seg * D)
         return loss
 
 
@@ -136,16 +151,31 @@ class RoutingDistillationLoss(nn.Module):
                 g1_t_trunc * (g1_s_trunc + 1e-8).log()).sum(dim=-1).mean()
 
         # Stage 2: Expert-level routing KL (Eq. 16)
+        # Match by actual family index, not position in top-k ranking,
+        # since student and teacher may select different top-k families.
         l_r2 = 0.0
         count = 0
         for b in range(B):
-            for m_local in range(k1):
-                if (m_local < len(routing_s["g2_raw"][b]) and
-                    m_local < len(routing_t["g2_raw"][b])):
-                    g2_s_raw = routing_s["g2_raw"][b][m_local]  # [1, N_m]
-                    g2_t_raw = routing_t["g2_raw"][b][m_local]  # [1, N_m]
+            # Build family-ID -> g2_raw position lookup for student
+            s_family_to_pos = {}
+            for pos, m_idx_tensor in enumerate(routing_s["g1_selected_idx"][b]):
+                s_family_to_pos[m_idx_tensor.item()] = pos
 
-                    N_m_actual = g2_s_raw.size(-1)
+            # Build family-ID -> g2_raw position lookup for teacher
+            t_family_to_pos = {}
+            for pos, m_idx_tensor in enumerate(routing_t["g1_selected_idx"][b]):
+                t_family_to_pos[m_idx_tensor.item()] = pos
+
+            # Compare expert distributions only for families selected by BOTH models
+            for m_actual in range(k1):
+                m_t = topk_idx[b, m_actual].item()  # teacher's top-k family ID
+                if m_t in s_family_to_pos and m_t in t_family_to_pos:
+                    s_pos = s_family_to_pos[m_t]
+                    t_pos = t_family_to_pos[m_t]
+                    g2_s_raw = routing_s["g2_raw"][b][s_pos]  # [1, N_m]
+                    g2_t_raw = routing_t["g2_raw"][b][t_pos]  # [1, N_m]
+
+                    N_m_actual = min(g2_s_raw.size(-1), g2_t_raw.size(-1))
                     k2 = min(self.top_k2, N_m_actual)
 
                     _, topk2_idx = torch.topk(g2_t_raw, k2, dim=-1)
@@ -204,7 +234,7 @@ class EWCLoss(nn.Module):
             self.model.zero_grad()
             outputs = self.model(features)
             log_likelihood = F.log_softmax(outputs["video_logits"], dim=-1)
-            log_likelihood = log_likelihood.gather(1, labels.unsqueeze(1)).sum()
+            log_likelihood = log_likelihood.gather(1, labels.unsqueeze(1)).mean()
 
             # Compute gradients of log-likelihood
             grads = torch.autograd.grad(log_likelihood, self.model.parameters(),

@@ -210,12 +210,25 @@ def main():
         phase_data, args.feature_dir, config
     )
 
-    # Merge configs
+    # Build config preserving nested sections for downstream lookups
+    # (IncrementalTrainer needs config["training"] and config["elm"] as nested dicts)
     full_config = {}
     for section in ["feature_extraction", "hmoe", "incremental", "elm", "training", "evaluation"]:
         if section in config:
+            full_config[section] = config[section]
             full_config.update(config[section])
+    # Map config keys for HAES direct instantiation (input_dim from feature_dim etc.)
+    full_config["input_dim"] = full_config.get("feature_dim", 512)
+    full_config["top_k_segments"] = config.get("training", {}).get("top_k_segments", 3)
+    # Dataset-appropriate primary metric for BWT matrix
+    eval_cfg = config.get("evaluation", {})
+    if args.dataset == "ucf_crime":
+        full_config["primary_metric"] = "AUC"
+    else:
+        full_config["primary_metric"] = eval_cfg.get("xd_violence_metric", "AP")
+
     full_config["total_phases"] = protocol[args.dataset]["num_phases"]
+    full_config["num_classes"] = protocol[args.dataset]["num_categories"]
     full_config["log_dir"] = os.path.join(args.output_dir, "logs")
     full_config["checkpoint_dir"] = os.path.join(args.output_dir, "checkpoints")
 

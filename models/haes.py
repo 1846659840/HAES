@@ -236,11 +236,13 @@ class HAES(nn.Module):
                 outputs["segment_logits"]
             )  # [B]
 
-            # Output KD (Eq. 12) - compute per-sample then apply entropy weights
-            loss_kd = self.kd_loss(
+            # Output KD (Eq. 12) - per-sample entropy weighting (Theorem 3)
+            per_sample_kd = self.kd_loss(
                 outputs["segment_logits"],
-                teacher_outputs["segment_logits"]
-            )
+                teacher_outputs["segment_logits"],
+                reduction="none",
+            )  # [B]
+            loss_kd = (per_sample_kd * entropy_weights).mean()
 
             # Feature consistency (Eq. 13)
             loss_mse = self.mse_loss(
@@ -257,9 +259,9 @@ class HAES(nn.Module):
             # EWC regularization (Eq. 19)
             loss_ewc = self.ewc_loss()
 
-            # Weighted combination with per-sample entropy weighting
+            # Weighted combination (Eq. 22)
             total_loss += (
-                self.lambda_kd * loss_kd * entropy_weights.mean() +
+                self.lambda_kd * loss_kd +
                 self.lambda_mse * loss_mse +
                 self.lambda_r * loss_r +
                 self.lambda_ewc * loss_ewc

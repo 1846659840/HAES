@@ -96,8 +96,13 @@ class Evaluator:
     @torch.no_grad()
     def evaluate_incremental_phases(self, phase_test_loaders, phase_configs):
         """
-        Evaluate performance across all incremental phases.
-        Tracks BWT (Backward Transfer) to measure catastrophic forgetting.
+        Evaluate performance across all incremental phases using current model.
+
+        Note: BWT requires model snapshots at each training phase to measure
+        forgetting. When called with a single (final) checkpoint, the performance
+        matrix will have identical rows and BWT will be ~0. For proper BWT
+        measurement, use the trainer's train_all_phases which tracks performance
+        after each incremental phase.
 
         Args:
             phase_test_loaders: list of test DataLoaders per phase
@@ -339,24 +344,31 @@ class Evaluator:
         all_is_noise = np.concatenate(all_is_noise)
 
         # Noise detection via entropy thresholding
+        # Compute proper ROC-AUC using sklearn for accurate evaluation
+        from sklearn.metrics import roc_auc_score as sklearn_auc
+        try:
+            entropy_auc = sklearn_auc(all_is_noise, all_entropies)
+        except ValueError:
+            entropy_auc = 0.5
+
+        # Find best entropy threshold via Youden index
         threshold_candidates = np.linspace(
             all_entropies.min(), all_entropies.max(), 100
         )
-        best_auc = 0
+        best_j = -1
         best_threshold = 0
-
         for threshold in threshold_candidates:
-            predicted_noise = all_entropies > threshold
-            # Simple AUC approximation
+            predicted_noise = (all_entropies > threshold).astype(int)
             tpr = np.sum((predicted_noise == 1) & (all_is_noise == 1)) / max(np.sum(all_is_noise == 1), 1)
             fpr = np.sum((predicted_noise == 1) & (all_is_noise == 0)) / max(np.sum(all_is_noise == 0), 1)
-            if tpr + (1 - fpr) > best_auc:
-                best_auc = tpr + (1 - fpr)
+            j = tpr - fpr
+            if j > best_j:
+                best_j = j
                 best_threshold = threshold
 
         # Noise rejection rate at best threshold
         noise_mask = all_is_noise == 1
-        predicted_noise = all_entropies > best_threshold
+        predicted_noise = (all_entropies > best_threshold).astype(int)
         noise_rejection_rate = np.sum(predicted_noise[noise_mask]) / max(np.sum(noise_mask), 1)
 
         # Hard normal retention rate
@@ -366,7 +378,7 @@ class Evaluator:
         return {
             "noise_mean_entropy": float(np.mean(all_entropies[noise_mask])),
             "hard_normal_mean_entropy": float(np.mean(all_entropies[normal_mask])),
-            "entropy_auc": float(best_auc),
+            "entropy_auc": float(entropy_auc),
             "noise_rejection_rate": float(noise_rejection_rate),
             "hard_normal_retention_rate": float(hard_normal_retention),
             "best_entropy_threshold": float(best_threshold),

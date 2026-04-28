@@ -44,8 +44,9 @@ class FamilyGate(nn.Module):
         # Softmax gating
         g_raw = F.softmax(self.W_g1(self.dropout(x_bar)), dim=-1)  # [B, M]
 
-        # Top-k selection
-        g_topk_vals, g_topk_idx = torch.topk(g_raw, self.top_k, dim=-1)  # [B, k1]
+        # Top-k selection (guard against k > num_families)
+        k = min(self.top_k, self.num_families)
+        g_topk_vals, g_topk_idx = torch.topk(g_raw, k, dim=-1)  # [B, k1]
 
         # Renormalize
         g_normalized = g_topk_vals / (g_topk_vals.sum(dim=-1, keepdim=True) + 1e-8)

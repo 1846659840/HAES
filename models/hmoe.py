@@ -39,6 +39,12 @@ class HMoE(nn.Module):
         self.top_k1 = top_k1
         self.top_k2 = top_k2
 
+        # Store expert architecture for dynamic add/merge operations
+        self.expert_num_heads = expert_num_heads
+        self.expert_ffn_dim = expert_ffn_dim
+        self.expert_num_layers = expert_num_layers
+        self.expert_dropout = dropout
+
         # Feature encoding projection (Eq. 2)
         self.W_enc = nn.Linear(input_dim, latent_dim)
         self.enc_norm = nn.LayerNorm(input_dim)
@@ -154,7 +160,7 @@ class HMoE(nn.Module):
         """Get centroid feature vectors for all experts (for ELM merging)."""
         centroids = {}
         for m in range(self.num_families):
-            for n in range(self.experts_per_family):
+            for n in range(len(self.experts[m])):
                 centroids[(m, n)] = self.experts[m][n].get_centroid(X)
         return centroids
 
@@ -166,13 +172,13 @@ class HMoE(nn.Module):
         if len(self.experts[m]) >= 8:  # Safety cap
             return False
 
-        # Compute mean of sibling expert parameters
+        # Compute mean of sibling expert parameters (Eq. 23)
         new_expert = TransformerExpert(
             dim=self.latent_dim,
-            num_heads=8,
-            ffn_dim=2048,
-            num_layers=2,
-            dropout=0.1,
+            num_heads=self.expert_num_heads,
+            ffn_dim=self.expert_ffn_dim,
+            num_layers=self.expert_num_layers,
+            dropout=self.expert_dropout,
         )
 
         # Initialize as mean of existing experts (Eq. 23)

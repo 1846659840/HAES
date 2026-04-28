@@ -35,6 +35,15 @@ from utils.metrics import compute_video_level_ap, compute_video_level_auc, compu
 from utils.logging import save_checkpoint, log_metrics
 
 
+def _get_primary_metric(metrics, config):
+    """Select dataset-appropriate metric for BWT performance matrix.
+    XD-Violence uses AP, UCF-Crime uses AUC (Section IV-A)."""
+    primary = config.get("primary_metric", "AP")
+    if primary == "AUC":
+        return metrics.get("mean_auc", 0)
+    return metrics.get("mean_ap", 0)
+
+
 class IncrementalTrainer:
     """
     Incremental trainer for HAES.
@@ -48,6 +57,15 @@ class IncrementalTrainer:
     def __init__(self, config, device="cuda"):
         self.config = config
         self.device = device
+
+        # Reproducibility (Section IV-B: seed=42)
+        seed = config.get("seed", 42)
+        import random
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
 
         # Training hyperparameters
         train_cfg = config.get("training", {})
@@ -465,7 +483,7 @@ class IncrementalTrainer:
 
             # Record performance after this phase
             # Use dataset-appropriate metric: AP for XD-Violence, AUC for UCF-Crime
-            primary_metric = phase_metrics.get("mean_ap", phase_metrics.get("mean_auc", 0))
+            primary_metric = _get_primary_metric(phase_metrics, self.config)
             self.performance_matrix[phase_idx, phase_idx] = primary_metric
 
             # Evaluate on all previous phases
@@ -473,7 +491,7 @@ class IncrementalTrainer:
                 _, prev_test_loader = phase_loaders[prev_phase]
                 prev_seen, _ = phase_configs[prev_phase]
                 prev_metrics = self.validate(prev_test_loader, prev_seen, logger)
-                prev_primary = prev_metrics.get("mean_ap", prev_metrics.get("mean_auc", 0))
+                prev_primary = _get_primary_metric(prev_metrics, self.config)
                 self.performance_matrix[phase_idx, prev_phase] = prev_primary
 
             all_phase_results.append(phase_metrics)
