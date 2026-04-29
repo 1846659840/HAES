@@ -10,6 +10,8 @@ Architecture overview:
 5. Cross-family fusion (Eq. 9)
 """
 
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -189,7 +191,6 @@ class HMoE(nn.Module):
 
         # Initialize as mean of existing experts (Eq. 23)
         with torch.no_grad():
-            existing_params_list = list(self.experts[m][0].parameters())
             for p_idx, new_param in enumerate(new_expert.parameters()):
                 stacked = torch.stack([
                     list(e.parameters())[p_idx].data
@@ -202,12 +203,12 @@ class HMoE(nn.Module):
         new_expert.to(next(self.parameters()).device)
         # Update expert gate dimension
         old_gate = self.gate.expert_gates[m]
-        new_gate = nn.Linear(self.latent_dim, len(self.experts[m]))
+        device = next(self.parameters()).device
+        new_gate = nn.Linear(self.latent_dim, len(self.experts[m]), device=device)
         # Copy old weights
         with torch.no_grad():
             new_gate.weight[:old_gate.experts_per_family] = old_gate.W_g2.weight
             new_gate.bias[:old_gate.experts_per_family] = old_gate.W_g2.bias
-        new_gate = new_gate.to(next(self.parameters()).device)
         # Keep as linear layer - wrap in ExpertGate logic
         old_gate.experts_per_family = len(self.experts[m])
         old_gate.W_g2 = new_gate
@@ -236,14 +237,16 @@ class HMoE(nn.Module):
         success = self._remove_expert(m, j)
         return success
 
-    def recycle_expert(self, m, n):
+    def recycle_expert(self, m, n, init_var=0.02):
         """
         Reset an expert to random initialization (ELM Recycling).
-        theta -> N(0, sigma_init^2)
+        theta -> N(0, sigma_init^2) per Section III-E; variance sigma_init^2 = 0.02
+        (Section IV-B line 704), so std = sqrt(0.02) ~= 0.1414.
         """
+        std = math.sqrt(init_var)
         with torch.no_grad():
             for param in self.experts[m][n].parameters():
-                param.normal_(mean=0.0, std=0.02)
+                param.normal_(mean=0.0, std=std)
 
     def _remove_expert(self, m, n):
         """Remove expert n from family m. Updates gating dimensions to match."""

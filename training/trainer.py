@@ -16,7 +16,7 @@ Key hyperparameters (Section IV-B):
 - Temperature tau=4 for distillation
 - Top-K=3 segments for MIL aggregation
 - lambda_KD=lambda_MSE=lambda_R=1, lambda_EWC=100
-- Warmup epochs = 3
+- Warmup epochs = 5 (Section IV-B line 708)
 """
 
 import os
@@ -76,7 +76,7 @@ class IncrementalTrainer:
         self.learning_rate = train_cfg.get("learning_rate", 5e-4)
         self.weight_decay = train_cfg.get("weight_decay", 1e-4)
         self.num_workers = train_cfg.get("num_workers", 4)
-        self.warmup_epochs = train_cfg.get("warmup_epochs", 3)
+        self.warmup_epochs = train_cfg.get("warmup_epochs", 5)
 
         # Output directories
         self.log_dir = config.get("log_dir", "./logs")
@@ -206,6 +206,18 @@ class IncrementalTrainer:
             elm_action = self.model.elm.step_epoch(epoch_loss)
             if elm_action:
                 logger.info(f"Phase {phase_idx + 1} Epoch {epoch + 1}: ELM - {elm_action}")
+                # Recreate optimizer after structural changes that add parameters
+                if "Added expert" in elm_action:
+                    self.optimizer = torch.optim.Adam(
+                        self.model.parameters(),
+                        lr=self.learning_rate,
+                        weight_decay=self.weight_decay,
+                    )
+                    self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                        self.optimizer,
+                        T_max=self.epochs_per_phase,
+                        eta_min=1e-6,
+                    )
 
             # Validation & checkpointing
             if epoch % 5 == 0 or epoch == self.epochs_per_phase - 1:
@@ -294,10 +306,11 @@ class IncrementalTrainer:
 
             self.optimizer.step()
 
-            # Record ELM batch statistics
+            # Record ELM batch statistics with encoded features (matching expert input)
+            encoded_X = self.model.hmoe.encode_features(features)
             self.model.elm.record_batch(
                 outputs["routing_info"],
-                features
+                encoded_X
             )
 
             # Accumulate metrics

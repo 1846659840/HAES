@@ -102,10 +102,12 @@ class FeatureConsistencyLoss(nn.Module):
         Returns:
             L_MSE: scalar loss
         """
-        # Eq. 13: L_MSE = (1/(T_seg*D)) * ||H_fused^S - H_fused^T||_F^2
-        # No L2 normalization - direct Frobenius norm on fused features
+        # Eq. 13: L_MSE = (1/(T_seg*D)) * ||H_bar^S - H_bar^T||_F^2
+        # Per-timestep L2 normalization: H_bar = H / ||H||_2
+        s_norm = torch.nn.functional.normalize(student_features, p=2, dim=-1)
+        t_norm = torch.nn.functional.normalize(teacher_features, p=2, dim=-1)
         B, T_seg, D = student_features.shape
-        loss = ((student_features - teacher_features) ** 2).sum() / (B * T_seg * D)
+        loss = ((s_norm - t_norm) ** 2).sum() / (B * T_seg * D)
         return loss
 
 
@@ -259,7 +261,12 @@ class EWCLoss(nn.Module):
         return fisher
 
     def update_fisher(self, new_fisher):
-        """Update Fisher with online-EWC decay."""
+        """
+        Update Fisher with online-EWC decay (paper III-C: "Fisher matrix is
+        recomputed once per phase and added to the previous-phase Fisher
+        with a decay factor").
+        F_new = decay * F_old + F_phase
+        """
         if not self.fisher_diag:
             self.fisher_diag = new_fisher
         else:
@@ -267,7 +274,7 @@ class EWCLoss(nn.Module):
                 if name in new_fisher:
                     self.fisher_diag[name] = (
                         self.fisher_decay * self.fisher_diag[name] +
-                        (1 - self.fisher_decay) * new_fisher[name]
+                        new_fisher[name]
                     )
 
     def set_anchor(self):
@@ -280,6 +287,9 @@ class EWCLoss(nn.Module):
         """
         Compute EWC regularization loss (Eq. 19).
 
+        Handles shape expansion after classification head grows:
+        only the overlapping parameter region receives the EWC penalty.
+
         Returns:
             L_EWC: scalar loss
         """
@@ -288,9 +298,21 @@ class EWCLoss(nn.Module):
 
         loss = 0.0
         for name, param in self.model.named_parameters():
-            if name in self.fisher_diag and name in self.anchor_params:
-                loss += (self.fisher_diag[name] *
-                         (param - self.anchor_params[name]) ** 2).sum()
+            if name not in self.fisher_diag or name not in self.anchor_params:
+                continue
+            fisher_val = self.fisher_diag[name]
+            anchor_val = self.anchor_params[name]
+            # Handle shape expansion after classification head grows
+            if param.shape != anchor_val.shape:
+                # Slice both to the overlapping dimensions
+                slices = tuple(
+                    slice(0, min(ps, av))
+                    for ps, av in zip(param.shape, anchor_val.shape)
+                )
+                loss += (fisher_val[slices] *
+                         (param[slices] - anchor_val[slices]) ** 2).sum()
+            else:
+                loss += (fisher_val * (param - anchor_val) ** 2).sum()
 
         return loss
 

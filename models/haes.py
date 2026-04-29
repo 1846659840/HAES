@@ -223,11 +223,8 @@ class HAES(nn.Module):
         video_logits = outputs["video_logits"]  # [B, C]
         loss_cls = F.cross_entropy(video_logits, labels)
 
-        # Temporal consistency loss
-        loss_temp = self.temp_loss(outputs["segment_logits"])
-
-        total_loss = loss_cls + self.lambda_temp * loss_temp
-        loss_dict = {"cls": loss_cls.item(), "temp": loss_temp.item()}
+        total_loss = loss_cls
+        loss_dict = {"cls": loss_cls.item()}
 
         # Knowledge distillation losses (Section III-C)
         # During warmup: uniform weights (all ones) per paper "Uniform distillation
@@ -264,8 +261,11 @@ class HAES(nn.Module):
                 teacher_outputs["routing_info"]
             )
 
-            # EWC regularization (Eq. 19)
-            loss_ewc = self.ewc_loss()
+            # EWC regularization (Eq. 19) — gated by the same noise-suppression
+            # entropy mask used for KD (Section III-C: "two losses are gated by
+            # a confidence mask that excludes high-entropy clips from both
+            # terms"). The mean entropy weight scales the parameter penalty.
+            loss_ewc = self.ewc_loss() * entropy_weights.mean()
 
             # Weighted combination (Eq. 22)
             total_loss += (
@@ -281,6 +281,11 @@ class HAES(nn.Module):
                 "r_kl": loss_r.item(),
                 "ewc": loss_ewc.item(),
             })
+
+            # Temporal consistency loss (Section III-C): only in incremental phases
+            loss_temp = self.temp_loss(outputs["segment_logits"])
+            total_loss += self.lambda_temp * loss_temp
+            loss_dict["temp"] = loss_temp.item()
 
         # Add load balancing auxiliary loss
         loss_balance = self.hmoe.gate.get_load_balance_loss(

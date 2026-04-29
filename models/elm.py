@@ -111,14 +111,15 @@ class ExpertLifecycleManager:
     """
     ELM: Governs Add / Merge / Recycle of experts across incremental phases.
 
-    Decision thresholds (paper-wide constants, not tuned per-dataset):
+    Decision thresholds (paper-wide constants, not tuned per-dataset; Section IV-B line 704):
     - tau_u^add = 0.65 (family activation overload)
     - tau_l = 0.20 (recycling threshold)
-    - tau_s = 0.78 (merging similarity threshold)
+    - delta_merge = 0.92 (merging similarity threshold)
     - delta_add = 0.05 (loss stagnation)
     - E_patience = 5 epochs
-    - E_cooldown = 2 epochs
-    - E_warmup = 1 epoch
+    - E_cooldown = 10 epochs
+    - E_warmup = 5 epochs
+    - sigma_init^2 = 0.02 (variance for recycled experts)
     """
 
     def __init__(self, config, hmoe_model, device="cuda"):
@@ -130,14 +131,16 @@ class ExpertLifecycleManager:
         self.add_patience = config.get("add_patience", 5)
         self.add_delta = config.get("add_threshold_delta", 0.05)
         self.add_family_threshold = config.get("add_family_threshold", 0.65)
-        self.merge_threshold = config.get("merge_threshold", 0.78)
+        self.merge_threshold = config.get("merge_threshold", 0.92)
         self.recycle_threshold = config.get("recycle_threshold", 0.20)
-        self.cooldown_epochs = config.get("cooldown_epochs", 2)
-        # ELM warmup matches trainer warmup (3 epochs per Section IV-B)
-        self.warmup_epochs = config.get("warmup_epochs", 3)
+        self.cooldown_epochs = config.get("cooldown_epochs", 10)
+        # ELM warmup matches trainer warmup (5 epochs per Section IV-B line 708)
+        self.warmup_epochs = config.get("warmup_epochs", 5)
         self.recycling_interval = config.get("recycling_interval", 5)
         self.max_experts = config.get("max_experts", 32)
         self.window_size = config.get("window_size", 2048)
+        # Variance for recycled-expert reinit per Section IV-B (sigma_init^2 = 0.02)
+        self.init_var = config.get("init_var", config.get("init_std", 0.02))
 
         # Trackers
         self.activation_tracker = ActivationTracker(window_size=self.window_size)
@@ -195,17 +198,16 @@ class ExpertLifecycleManager:
             self.epochs_since_structural_change += 1
             return None
 
-        # Check for Expert Addition
-        if self._should_add_expert():
+        # Check for Expert Addition (only in incremental phases, phase > 0)
+        if self.current_phase > 0 and self._should_add_expert():
             return self._add_expert()
 
-        # Check for Expert Merging
-        if self._should_merge():
+        # Check for Expert Merging (only in incremental phases)
+        if self.current_phase > 0 and self._should_merge():
             return self._merge_experts()
 
-        # Check for Expert Recycling (checked every epoch, not just once per phase)
-        if (self.current_phase > 0 and
-            self.current_phase % self.recycling_interval == 0):
+        # Check for Expert Recycling (checked every epoch)
+        if self.current_phase > 0 and self.phase_epoch % self.recycling_interval == 0:
             recycle_result = self._recycle_experts()
             if recycle_result:
                 return recycle_result
@@ -316,7 +318,7 @@ class ExpertLifecycleManager:
             for n in range(size):
                 freq = self.activation_tracker.get_activation_frequency(m, n)
                 if freq < self.recycle_threshold and size > 2:
-                    self.model.recycle_expert(m, n)
+                    self.model.recycle_expert(m, n, init_var=self.init_var)
                     recycled.append(f"family{m}_expert{n} (freq={freq:.4f})")
                     self.total_recycles += 1
                     # Reset tracking metadata for recycled expert

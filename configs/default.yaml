@@ -41,12 +41,12 @@ elm:
   add_threshold_delta: 0.05  # delta_add for loss stagnation
   add_patience: 5    # E_patience epochs
   add_family_threshold: 0.65  # tau_u^add for family activation
-  merge_threshold: 0.78  # delta_merge cosine similarity
+  merge_threshold: 0.92  # delta_merge cosine similarity (Section IV-B)
   recycle_threshold: 0.20  # tau_l activation frequency
-  cooldown_epochs: 2  # E_cooldown
-  warmup_epochs: 3   # E_warmup (matches trainer warmup, Section IV-B)
+  cooldown_epochs: 10  # E_cooldown (Section IV-B)
+  warmup_epochs: 5   # E_warmup (Section IV-B line 708)
   recycling_interval: 5  # f phases
-  init_std: 0.02     # sigma_init for recycled experts
+  init_var: 0.02     # sigma_init^2 (variance) for recycled experts; std = sqrt(0.02)
   max_experts: 32    # structural budget cap
 
 training:
@@ -56,7 +56,7 @@ training:
   weight_decay: 0.0001   # 1e-4
   optimizer: "adam"
   num_workers: 4
-  warmup_epochs: 3  # warm-up phase with uniform distillation
+  warmup_epochs: 5  # warm-up phase with uniform distillation (Section IV-B line 708)
   top_k_segments: 3  # K for Top-K MIL aggregation
 
 evaluation:

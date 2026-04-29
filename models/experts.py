@@ -119,8 +119,6 @@ class TransformerExpert(nn.Module):
         """
         with torch.no_grad():
             H = X
-            for i, layer in enumerate(self.layers):
+            for layer in self.layers:
                 H = layer(H)
-                if i == 0:  # Use first layer output as representation
-                    break
             return H.mean(dim=(0, 1))  # [D]
