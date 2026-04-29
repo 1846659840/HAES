@@ -197,9 +197,9 @@ class RoutingDistillationLoss(nn.Module):
                              g2_t_trunc * (g2_s_trunc + 1e-8).log()).sum(dim=-1).mean()
                     count += 1
 
-        if count > 0:
-            l_r2 /= count
-
+        # Paper Eq. 16: L_R^(2) = SUM over m in Omega^(1) (no /count averaging).
+        # The Σ is intentional — the routing-distillation term scales with the
+        # number of teacher-selected families.
         return l_r1 + l_r2
 
 

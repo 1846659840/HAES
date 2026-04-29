@@ -159,11 +159,16 @@ class HAES(nn.Module):
         self.noise_module = NoiseSuppressionModule(entropy_threshold=1.5)
 
         # --- Loss weights ---
+        # Eq. 22 has 5 terms: cls + lambda_KD + lambda_MSE + lambda_R + lambda_EWC.
+        # `lambda_balance` is an optional auxiliary controlling the load-balance
+        # term mentioned in paper line 441 ("a load-balance term Σ_m(g_bar_m^(1))^2");
+        # default 0 so the optimised objective matches Eq. 22 exactly.
         self.lambda_kd = config.get("lambda_kd", 1.0)
         self.lambda_mse = config.get("lambda_mse", 1.0)
         self.lambda_r = config.get("lambda_r", 1.0)
         self.lambda_ewc = config.get("lambda_ewc", 100.0)
         self.lambda_temp = config.get("lambda_temp", 0.1)
+        self.lambda_balance = config.get("lambda_balance", 0.0)
 
         # --- ELM manager ---
         elm_config = config.get("elm_config", {})
@@ -219,9 +224,15 @@ class HAES(nn.Module):
             total_loss: scalar
             loss_dict: breakdown of individual losses
         """
-        # Classification loss (Eq. 21)
+        # Classification loss (Eq. 21):
+        #   L_cls = -Σ_c 1[y=c] log A_vid^(c) where A_vid^(c) = σ(S_vid^(c))
+        # Per-class independent sigmoid (paper Eq. 20), then -log of true class.
+        # This matches the paper's literal σ-then-indicator formulation rather
+        # than softmax cross-entropy.
         video_logits = outputs["video_logits"]  # [B, C]
-        loss_cls = F.cross_entropy(video_logits, labels)
+        video_probs = torch.sigmoid(video_logits)  # [B, C]
+        true_class_probs = video_probs.gather(1, labels.unsqueeze(1)).squeeze(1)  # [B]
+        loss_cls = -torch.log(true_class_probs + 1e-8).mean()
 
         total_loss = loss_cls
         loss_dict = {"cls": loss_cls.item()}
@@ -287,11 +298,15 @@ class HAES(nn.Module):
             total_loss += self.lambda_temp * loss_temp
             loss_dict["temp"] = loss_temp.item()
 
-        # Add load balancing auxiliary loss
+        # Load-balance term Σ_m (g_bar_m^(1))^2 from paper line 441. Eq. 22
+        # does NOT enumerate it, so by default lambda_balance = 0 keeps L_total
+        # strictly equal to the five paper-listed terms; setting lambda_balance
+        # > 0 in config enables the auxiliary term mentioned in HMoE design.
         loss_balance = self.hmoe.gate.get_load_balance_loss(
             outputs["routing_info"]["g1_raw"]
         )
-        total_loss += 0.01 * loss_balance
+        if self.lambda_balance > 0:
+            total_loss = total_loss + self.lambda_balance * loss_balance
         loss_dict["balance"] = loss_balance.item()
         loss_dict["total"] = total_loss.item()
 

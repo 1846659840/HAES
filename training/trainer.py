@@ -176,8 +176,10 @@ class IncrementalTrainer:
         # Set model to training mode
         self.model.train()
 
-        # Initialize ELM for this phase
-        self.model.elm.start_phase(phase_idx)
+        # Initialize ELM for this phase. Pass num_classes so the rare-class
+        # percentile (Section III-E line 624 safeguard ii) enumerates the
+        # full label vocabulary including currently-unseen classes.
+        self.model.elm.start_phase(phase_idx, num_classes=num_classes)
 
         # Warmup applies to first incremental phase (phase 1+), not phase 0
         # Phase 0 has no teacher, so warmup has no effect there
@@ -306,11 +308,13 @@ class IncrementalTrainer:
 
             self.optimizer.step()
 
-            # Record ELM batch statistics with encoded features (matching expert input)
+            # Record ELM batch statistics with encoded features (matching expert
+            # input) plus the true class labels for rare-class protection.
             encoded_X = self.model.hmoe.encode_features(features)
             self.model.elm.record_batch(
                 outputs["routing_info"],
-                encoded_X
+                encoded_X,
+                labels=labels,
             )
 
             # Accumulate metrics

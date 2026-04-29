@@ -24,7 +24,6 @@ class FamilyGate(nn.Module):
         self.top_k = top_k
 
         self.W_g1 = nn.Linear(dim, num_families)
-        self.dropout = nn.Dropout(dropout)
         self._init_weights()
 
     def _init_weights(self):
@@ -41,8 +40,8 @@ class FamilyGate(nn.Module):
             g_normalized: renormalized gating weights [B, k1]
             g_raw: raw softmax distribution [B, M]
         """
-        # Softmax gating
-        g_raw = F.softmax(self.W_g1(self.dropout(x_bar)), dim=-1)  # [B, M]
+        # Eq. 5: g^(1) = Softmax(x_bar W_g1 + b_g1) — no dropout on x_bar.
+        g_raw = F.softmax(self.W_g1(x_bar), dim=-1)  # [B, M]
 
         # Top-k selection (guard against k > num_families)
         k = min(self.top_k, self.num_families)
@@ -74,7 +73,6 @@ class ExpertGate(nn.Module):
         )
 
         self.W_g2 = nn.Linear(dim, experts_per_family)
-        self.dropout = nn.Dropout(dropout)
         self._init_weights()
 
     @property
@@ -99,7 +97,8 @@ class ExpertGate(nn.Module):
             g_normalized: renormalized weights [B, k2]
             g_raw: raw distribution [B, N_m]
         """
-        g_raw = F.softmax(self.W_g2(self.dropout(x_bar)), dim=-1)  # [B, N_m]
+        # Eq. 6: g_m^(2) = Softmax(x_bar W_g2,m + b_g2,m) — no dropout on x_bar.
+        g_raw = F.softmax(self.W_g2(x_bar), dim=-1)  # [B, N_m]
 
         k = min(self.top_k, self.experts_per_family)
         g_topk_vals, g_topk_idx = torch.topk(g_raw, k, dim=-1)

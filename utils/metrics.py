@@ -188,7 +188,8 @@ def compute_video_level_ap(video_scores, video_labels, num_classes):
 
 def compute_video_level_auc(video_scores, video_labels, num_classes):
     """
-    Compute multi-class video-level AUC for UCF-Crime.
+    Compute multi-class video-level AUC for UCF-Crime using the trapezoidal
+    rule per paper Eq. 26.
 
     Args:
         video_scores: [N, C] predicted class scores
@@ -205,7 +206,8 @@ def compute_video_level_auc(video_scores, video_labels, num_classes):
         if binary_labels.sum() == 0 or binary_labels.sum() == len(binary_labels):
             class_aucs.append(0.5)
             continue
-        auc = compute_auc(video_scores[:, c], binary_labels)
+        # Eq. 26: trapezoidal-rule AUC, not sklearn's roc_auc_score
+        auc = compute_auc_trapezoidal(video_scores[:, c], binary_labels)
         class_aucs.append(auc)
 
     mean_auc = np.mean(class_aucs)
